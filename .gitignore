@@ -1,0 +1,30 @@
+# === Fichiers sensibles (clés API, secrets) ===
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+
+# === Données utilisateurs ===
+backend/data/quotas.json
+
+# === Python ===
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.so
+
+# === Node / Next.js ===
+node_modules/
+.next/
+out/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp

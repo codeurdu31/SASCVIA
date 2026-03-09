@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip:*)",
+      "Bash(python:*)",
+      "Bash(ls:*)",
+      "Bash(C:/Users/simon/ProjetSASIA/.venv/Scripts/python.exe:*)",
+      "Bash(npx tsc:*)",
+      "Bash(C:/Users/simon/ProjetSASIA/.venv/Scripts/pip.exe install:*)",
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(where python:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(.venv/Scripts/pip.exe list:*)",
+      "Bash(tasklist:*)",
+      "Bash(tasklist.exe:*)",
+      "Bash(\"C:\\\\Users\\\\simon\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\python.exe\":*)",
+      "Bash(\"C:\\\\Users\\\\simon\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\Scripts\\\\pip.exe\" install:*)",
+      "Bash(grep:*)",
+      "Bash(npx next:*)",
+      "Bash(\"/c/Users/simon/ProjetSASIA/.venv/Scripts/pip\" install:*)",
+      "Bash(\"/c/Users/simon/ProjetSASIA/.venv/Scripts/python\":*)",
+      "Bash(cp:*)",
+      "Bash(sed:*)",
+      "Bash(npm install:*)",
+      "Bash(C:/Users/simon/ProjetSASIA/frontend/.env.local:*)",
+      "WebSearch",
+      "WebFetch(domain:intercom.help)",
+      "WebFetch(domain:www.kickresume.com)",
+      "WebFetch(domain:www.capterra.com)",
+      "WebFetch(domain:quinncia.io)",
+      "WebFetch(domain:www.vmock.com)",
+      "Bash(pip install:*)"
+    ]
+  }
+}

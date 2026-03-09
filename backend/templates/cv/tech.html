@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 14mm 16mm 14mm 16mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Helvetica Neue', 'Arial', sans-serif;
+    font-size: 9pt;
+    color: #222;
+    line-height: 1.35;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Header with accent bar */
+  .header {
+    border-left: 4px solid #2563eb;
+    padding-left: 14px;
+    margin-bottom: 10px;
+  }
+  .name { font-size: 20pt; font-weight: 700; color: #111; letter-spacing: -0.5px; }
+  .headline { font-size: 10pt; color: #2563eb; margin-top: 2px; font-weight: 500; }
+  .contact { font-size: 8pt; color: #666; margin-top: 4px; }
+
+  /* Separator */
+  .separator { border: none; border-top: 2px solid #2563eb; margin: 6px 0 10px 0; }
+
+  /* Sections */
+  .section { margin-bottom: 9px; }
+  .section-heading {
+    font-size: 9.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #2563eb;
+    margin-bottom: 5px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid #dbeafe;
+  }
+
+  /* Items */
+  .item { margin-bottom: 5px; }
+  .item-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .item-title { font-weight: 700; font-size: 9pt; color: #111; }
+  .item-date {
+    font-size: 7.5pt;
+    color: #fff;
+    background: #2563eb;
+    padding: 1px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .item-subtitle { font-size: 8.5pt; color: #555; }
+  .item-bullets { list-style: none; padding-left: 0; margin-top: 2px; }
+  .item-bullets li {
+    font-size: 8.5pt;
+    padding-left: 12px;
+    text-indent: -12px;
+    margin-bottom: 1px;
+  }
+  .item-bullets li::before { content: "\25B8\00a0"; color: #2563eb; font-size: 7pt; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="name">{{ name }}</div>
+    {% if title %}<div class="headline">{{ title }}</div>{% endif %}
+    {% if contact %}<div class="contact">{{ contact }}</div>{% endif %}
+  </div>
+
+  <hr class="separator">
+
+  {% for section in sections %}
+  <div class="section">
+    <div class="section-heading">{{ section.heading }}</div>
+    {% for item in section["items"] %}
+    <div class="item">
+      <div class="item-header">
+        <span class="item-title">{{ item.title }}</span>
+        {% if item.date %}<span class="item-date">{{ item.date }}</span>{% endif %}
+      </div>
+      {% if item.subtitle %}<div class="item-subtitle">{{ item.subtitle }}</div>{% endif %}
+      {% if item.bullets %}
+      <ul class="item-bullets">
+        {% for bullet in item.bullets %}<li>{{ bullet }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</body>
+</html>

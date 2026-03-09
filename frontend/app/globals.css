@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: 249 250 251;    /* gray-50 */
+    --bg-card: 255 255 255;       /* white */
+    --text-primary: 17 24 39;     /* gray-900 */
+    --text-secondary: 107 114 128; /* gray-500 */
+    --ring-card: 243 244 246;     /* gray-100 */
+  }
+
+  .dark {
+    --bg-primary: 17 24 39;       /* gray-900 */
+    --bg-card: 31 41 55;          /* gray-800 */
+    --text-primary: 243 244 246;  /* gray-100 */
+    --text-secondary: 156 163 175; /* gray-400 */
+    --ring-card: 55 65 81;        /* gray-700 */
+  }
+}
+
+/* Skeleton shimmer animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg,
+    rgb(229 231 235) 25%,
+    rgb(243 244 246) 50%,
+    rgb(229 231 235) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+
+.dark .skeleton {
+  background: linear-gradient(90deg,
+    rgb(55 65 81) 25%,
+    rgb(75 85 99) 50%,
+    rgb(55 65 81) 75%
+  );
+  background-size: 200% 100%;
+}

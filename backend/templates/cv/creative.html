@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Helvetica Neue', 'Arial', sans-serif;
+    font-size: 9pt;
+    color: #333;
+    line-height: 1.35;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page { display: flex; min-height: 297mm; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 65mm;
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 20mm 8mm 15mm 8mm;
+    flex-shrink: 0;
+  }
+  .sidebar .name {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 3px;
+  }
+  .sidebar .headline {
+    font-size: 9pt;
+    color: #38bdf8;
+    font-weight: 500;
+    margin-bottom: 12px;
+  }
+  .sidebar .contact-block { margin-bottom: 14px; }
+  .sidebar .contact-item {
+    font-size: 7.5pt;
+    color: #cbd5e1;
+    margin-bottom: 3px;
+    word-break: break-all;
+  }
+  .sidebar .side-section { margin-bottom: 12px; }
+  .sidebar .side-heading {
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #38bdf8;
+    border-bottom: 1px solid #334155;
+    padding-bottom: 3px;
+    margin-bottom: 5px;
+  }
+  .sidebar .side-content {
+    font-size: 8pt;
+    color: #cbd5e1;
+    line-height: 1.4;
+  }
+  .sidebar .skill-tag {
+    display: inline-block;
+    background: #334155;
+    color: #e2e8f0;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 7.5pt;
+    margin: 1px 2px;
+  }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    padding: 18mm 16mm 15mm 14mm;
+  }
+
+  .section { margin-bottom: 9px; }
+  .section-heading {
+    font-size: 10pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #1e293b;
+    padding-bottom: 3px;
+    border-bottom: 2px solid #38bdf8;
+    margin-bottom: 6px;
+  }
+
+  .item { margin-bottom: 6px; }
+  .item-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .item-title { font-weight: 700; font-size: 9pt; color: #1e293b; }
+  .item-date { font-size: 7.5pt; color: #64748b; white-space: nowrap; }
+  .item-subtitle { font-size: 8.5pt; color: #475569; font-style: italic; }
+  .item-bullets { list-style: none; padding-left: 0; margin-top: 2px; }
+  .item-bullets li {
+    font-size: 8.5pt;
+    padding-left: 10px;
+    text-indent: -10px;
+    margin-bottom: 1px;
+  }
+  .item-bullets li::before { content: "\25CF\00a0"; color: #38bdf8; font-size: 5pt; vertical-align: middle; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="name">{{ name }}</div>
+      {% if title %}<div class="headline">{{ title }}</div>{% endif %}
+
+      <div class="contact-block">
+        <div class="side-heading">Contact</div>
+        {% for part in contact_parts %}
+        <div class="contact-item">{{ part }}</div>
+        {% endfor %}
+      </div>
+
+      {% if skills_section %}
+      <div class="side-section">
+        <div class="side-heading">{{ skills_section.heading }}</div>
+        <div class="side-content">
+          {% for item in skills_section["items"] %}
+            {% for bullet in item.bullets %}
+              {% for tag in bullet.split(',') %}
+                <span class="skill-tag">{{ tag.strip() }}</span>
+              {% endfor %}
+            {% endfor %}
+            {% if not item.bullets and item.title %}
+              {% for tag in item.title.split(',') %}
+                <span class="skill-tag">{{ tag.strip() }}</span>
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if languages_section %}
+      <div class="side-section">
+        <div class="side-heading">{{ languages_section.heading }}</div>
+        <div class="side-content">
+          {% for item in languages_section["items"] %}
+            {% if item.title %}{{ item.title }}<br>{% endif %}
+            {% for bullet in item.bullets %}{{ bullet }}<br>{% endfor %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if interests_section %}
+      <div class="side-section">
+        <div class="side-heading">{{ interests_section.heading }}</div>
+        <div class="side-content">
+          {% for item in interests_section["items"] %}
+            {% if item.title %}{{ item.title }}<br>{% endif %}
+            {% for bullet in item.bullets %}{{ bullet }}<br>{% endfor %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Main content -->
+    <div class="main">
+      {% for section in main_sections %}
+      <div class="section">
+        <div class="section-heading">{{ section.heading }}</div>
+        {% for item in section["items"] %}
+        <div class="item">
+          <div class="item-header">
+            <span class="item-title">{{ item.title }}</span>
+            {% if item.date %}<span class="item-date">{{ item.date }}</span>{% endif %}
+          </div>
+          {% if item.subtitle %}<div class="item-subtitle">{{ item.subtitle }}</div>{% endif %}
+          {% if item.bullets %}
+          <ul class="item-bullets">
+            {% for bullet in item.bullets %}<li>{{ bullet }}</li>{% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>
