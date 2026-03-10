@@ -150,7 +150,7 @@ async def generate_cover_letter(
 
     message = await client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=2000,
+        max_tokens=1500,
         system=[{
             "type": "text",
             "text": _build_cover_letter_prompt(language),

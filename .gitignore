@@ -7,6 +7,7 @@
 
 # === Données utilisateurs ===
 backend/data/quotas.json
+backend/data/access.json
 
 # === Python ===
 .venv/
@@ -24,7 +25,11 @@ out/
 .DS_Store
 Thumbs.db
 
-# === IDE ===
+# === IDE / outils locaux ===
 .vscode/
 .idea/
 *.swp
+.claude/
+
+# === Build artifacts ===
+*.tsbuildinfo

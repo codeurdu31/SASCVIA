@@ -46,6 +46,7 @@ from routes.contacts import router as contacts_router
 from routes.interview import router as interview_router
 from routes.quota import router as quota_router
 from routes.job_import import router as job_import_router
+from routes.access import router as access_router
 
 app = FastAPI(
     title="ProjetSASIA API",
@@ -73,6 +74,7 @@ app.include_router(contacts_router)
 app.include_router(interview_router)
 app.include_router(quota_router)
 app.include_router(job_import_router)
+app.include_router(access_router)
 
 
 @app.get("/", tags=["Health"])

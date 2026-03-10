@@ -7,12 +7,21 @@ import os
 from datetime import datetime
 
 _QUOTA_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "quotas.json")
-_MAX_USES_PER_MONTH = 10
+_MAX_USES_PER_MONTH = 20  # Limite par défaut (amis approuvés)
 
 # Emails admin exemptés de quota
 _ADMIN_EMAILS: set[str] = {
     "simonskydu31@gmail.com",
 }
+
+
+def _get_user_limit(user_email: str) -> int:
+    """Retourne la limite personnalisée depuis le système d'accès, ou la limite par défaut."""
+    try:
+        from routes.access import get_user_quota_limit
+        return get_user_quota_limit(user_email)
+    except Exception:
+        return _MAX_USES_PER_MONTH
 
 # Structure : {"2026-03": {"user@example.com": 5, ...}}
 _usage: dict[str, dict[str, int]] = {}
@@ -63,8 +72,9 @@ def check_quota(user_email: str | None) -> tuple[bool, int]:
     month = _current_month()
     month_usage = _usage.get(month, {})
     count = month_usage.get(user_email, 0)
-    remaining = max(0, _MAX_USES_PER_MONTH - count)
-    return count < _MAX_USES_PER_MONTH, remaining
+    limit = _get_user_limit(user_email)
+    remaining = max(0, limit - count)
+    return count < limit, remaining
 
 
 def increment_usage(user_email: str | None) -> int:
@@ -87,8 +97,9 @@ def increment_usage(user_email: str | None) -> int:
     _usage[month][user_email] = _usage[month].get(user_email, 0) + 1
     _save()
 
-    remaining = max(0, _MAX_USES_PER_MONTH - _usage[month][user_email])
-    print(f"[quota] {user_email} — {_usage[month][user_email]}/{_MAX_USES_PER_MONTH} ce mois ({remaining} restantes)")
+    limit = _get_user_limit(user_email)
+    remaining = max(0, limit - _usage[month][user_email])
+    print(f"[quota] {user_email} — {_usage[month][user_email]}/{limit} ce mois ({remaining} restantes)")
     return remaining
 
 
@@ -103,8 +114,9 @@ def get_usage_info(user_email: str | None) -> dict:
     _load()
     month = _current_month()
     used = _usage.get(month, {}).get(user_email, 0)
+    limit = _get_user_limit(user_email)
     return {
         "used": used,
-        "limit": _MAX_USES_PER_MONTH,
-        "remaining": max(0, _MAX_USES_PER_MONTH - used),
+        "limit": limit,
+        "remaining": max(0, limit - used),
     }

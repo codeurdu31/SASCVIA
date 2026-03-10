@@ -48,10 +48,17 @@ SaaS IA qui aide les candidats à postuler efficacement.
 - Backend : POST /interview/prepare (Sonnet)
 - Schemas : InterviewPrepRequest/Response, StudyTopic, StudyResource, InterviewQuestion
 
-#### Authentification & historique
+#### Authentification, accès & historique
 - **Connexion Google** via Supabase Auth (OAuth, écran de consentement Google Cloud)
-- **Gate d'authentification** : l'utilisateur doit être connecté pour utiliser l'app
-- **UserMenu** : avatar + menu déroulant (Mes candidatures, Se déconnecter)
+- **Contrôle d'accès par invitation** : après connexion Google, l'utilisateur doit être approuvé par l'admin
+  - Statuts : `unknown` → `pending` (demande envoyée) → `approved` / `denied`
+  - `AccessGate.tsx` : gate qui vérifie le statut avant d'afficher l'app
+  - Notification email (SMTP Gmail) envoyée à l'admin à chaque nouvelle demande
+  - Email de confirmation envoyé à l'utilisateur quand approuvé
+  - `AdminPanel.tsx` : panneau admin (visible dans UserMenu pour l'admin) pour accepter/refuser les demandes
+  - Backend : `routes/access.py` + `services/email_notifier.py`, stockage JSON (`backend/data/access.json`)
+  - Admin identifié par `ADMIN_EMAIL` dans `.env` (défaut : `simonskydu31@gmail.com`)
+- **UserMenu** : avatar + menu déroulant (Mes candidatures, Gérer les accès [admin], Se déconnecter)
 - **Sauvegarde automatique** : chaque analyse est enregistrée dans Supabase (table `candidatures` avec RLS)
 - **Historique "Mes candidatures"** : panel modal listant les analyses passées (poste, entreprise, score, date)
 - **Rechargement complet** : clic sur une candidature → restaure CV, offre, résultats, améliorations, projet suggéré
@@ -96,8 +103,11 @@ SaaS IA qui aide les candidats à postuler efficacement.
 - Apify : scraping LinkedIn (prévu)
 
 ## Quotas
-- 10 utilisations par email par mois (analyse CV + recherche contacts)
+- Limites personnalisées par utilisateur (stockées dans `access.json`) :
+  - Admin : illimité (9999)
+  - Amis approuvés : 20/mois par défaut (modifiable par l'admin)
 - Backend : `services/quota.py` — stockage fichier JSON (`backend/data/quotas.json`) + mémoire
+- Quota personnalisé récupéré depuis `routes/access.py` → `get_user_quota_limit()`
 - Route : `GET /quota/` — retourne `{used, limit, remaining}`
 - Header `X-User-Email` envoyé par le frontend sur les routes protégées
 - HTTP 429 si quota dépassé

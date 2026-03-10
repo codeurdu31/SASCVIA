@@ -114,7 +114,7 @@ async def interview_overview(
     )
 
     r = await client.messages.create(
-        model=_MODEL,
+        model=_EVAL_MODEL,  # Haiku pour la vitesse
         max_tokens=2000,
         system=[{
             "type": "text",
@@ -202,8 +202,8 @@ async def topic_detail(
     )
 
     r = await client.messages.create(
-        model=_MODEL,
-        max_tokens=4000,
+        model=_EVAL_MODEL,  # Haiku pour la vitesse
+        max_tokens=2500,
         system=[{
             "type": "text",
             "text": _TOPIC_DETAIL_PROMPT,
@@ -342,7 +342,7 @@ async def interview_questions(
 
     r = await client.messages.create(
         model=_MODEL,
-        max_tokens=8000,
+        max_tokens=4000,
         system=[{
             "type": "text",
             "text": prompt,
@@ -374,38 +374,49 @@ async def interview_questions(
 
 # ── Etape 4 : evaluation des reponses ────────────────────────────────────────
 
-_EVAL_SINGLE_PROMPT = """Tu es un coach d'entretien exigeant mais bienveillant.
+_EVAL_SINGLE_PROMPT = """Tu es un coach d'entretien bienveillant et encourageant.
 
 Evalue la reponse du candidat a une question d'entretien.
 
 Poste vise : {job_title}
 Categorie : {category} | Difficulte : {difficulty}
 
-Sois HONNETE et PRECIS :
-- Un score de 8+ = reponse quasi parfaite, rare
-- Un score de 5-7 = correct mais ameliorable
-- Un score < 5 = reponse insuffisante ou hors sujet
+Ton role est d'aider le candidat a progresser. Adopte un ton positif et constructif :
+- Commence TOUJOURS par valoriser ce qui est bien dans la reponse
+- Score 7+ = bonne reponse avec les idees cles presentes
+- Score 5-6 = reponse correcte, quelques ameliorations possibles
+- Score 3-4 = des bases presentes, mais il manque des elements importants
+- Score < 3 = reponse hors sujet ou vide
+- Formule les faiblesses comme des PISTES D'AMELIORATION, pas comme des critiques
+- La reponse amelioree doit montrer comment enrichir la reponse, pas la remplacer
 
 OUTPUT — JSON uniquement, sans markdown :
 {{
   "score": 7,
   "strengths": ["point fort 1", "point fort 2"],
-  "weaknesses": ["point faible 1"],
-  "improved_answer": "Voici une meilleure reponse...",
+  "weaknesses": ["piste d'amelioration 1"],
+  "improved_answer": "Voici comment enrichir ta reponse...",
   "verdict": "bon"
 }}
 
-verdict : "excellent" (8-10) | "bon" (6-7) | "moyen" (4-5) | "insuffisant" (0-3)"""
+verdict : "excellent" (8-10) | "bon" (6-7) | "moyen" (4-5) | "a travailler" (0-3)"""
 
-_EVAL_BATCH_PROMPT = """Tu es un coach d'entretien exigeant mais bienveillant.
+_EVAL_BATCH_PROMPT = """Tu es un coach d'entretien bienveillant et encourageant.
 
 Evalue TOUTES les reponses du candidat a ses questions d'entretien.
 Poste vise : {job_title}
 
-Pour CHAQUE reponse, donne score/10, points forts, points faibles, reponse amelioree, verdict.
-Puis donne un bilan global.
+Pour CHAQUE reponse, donne score/10, points forts, pistes d'amelioration, reponse amelioree, verdict.
+Puis donne un bilan global ENCOURAGEANT qui valorise les efforts du candidat.
 
-Sois HONNETE : un 8+/10 est rare, un 5-7 est correct mais ameliorable, un <5 est insuffisant.
+Ton role est d'aider le candidat a progresser, pas de le decourager :
+- Commence TOUJOURS par ce qui est bien
+- Score 7+ = bonne reponse, les idees cles sont la
+- Score 5-6 = correct, quelques ameliorations possibles
+- Score 3-4 = des bases presentes, des elements a approfondir
+- Score < 3 = reponse hors sujet ou vide
+- Formule les faiblesses comme des PISTES D'AMELIORATION positives
+- Le summary global doit encourager le candidat et souligner sa progression
 
 OUTPUT — JSON uniquement, sans markdown :
 {{
@@ -420,10 +431,10 @@ OUTPUT — JSON uniquement, sans markdown :
   ],
   "overall_score": 6,
   "overall_verdict": "bon",
-  "summary": "Synthese en 2-3 phrases..."
+  "summary": "Synthese encourageante en 2-3 phrases..."
 }}
 
-verdict : "excellent" (8-10) | "bon" (6-7) | "moyen" (4-5) | "insuffisant" (0-3)"""
+verdict : "excellent" (8-10) | "bon" (6-7) | "moyen" (4-5) | "a travailler" (0-3)"""
 
 
 _EVAL_MODEL = "claude-haiku-4-5-20251001"
@@ -501,8 +512,8 @@ async def evaluate_batch_answers(
     user_msg = f"Voici les {len(answers)} questions et reponses :\n\n{qa_block}\nEvalue tout en JSON."
 
     r = await client.messages.create(
-        model=_MODEL,  # Sonnet pour le batch (plus complexe)
-        max_tokens=8000,
+        model=_EVAL_MODEL,  # Haiku pour la vitesse
+        max_tokens=4000,
         system=[{
             "type": "text",
             "text": _EVAL_BATCH_PROMPT.format(job_title=job_title or "non precise"),

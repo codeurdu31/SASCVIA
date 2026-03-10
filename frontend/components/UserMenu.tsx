@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
 import HistoryPanel from "./HistoryPanel";
+import AdminPanel from "./AdminPanel";
 import type { LoadedCandidature, LoadedContactSearch } from "./HistoryPanel";
 
-export default function UserMenu({ onLoadCandidature, onLoadContactSearch }: {
+export default function UserMenu({ onLoadCandidature, onLoadContactSearch, isAdmin = false }: {
   onLoadCandidature?: (data: LoadedCandidature) => void;
   onLoadContactSearch?: (data: LoadedContactSearch) => void;
+  isAdmin?: boolean;
 }) {
   const { user, loading, signInWithGoogle, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   if (loading) {
     return <div className="h-9 w-9 rounded-full bg-gray-200 dark:bg-gray-700 animate-pulse" />;
@@ -72,6 +75,14 @@ export default function UserMenu({ onLoadCandidature, onLoadContactSearch }: {
             >
               Mes candidatures
             </button>
+            {isAdmin && (
+              <button
+                onClick={() => { setShowAdmin(true); setMenuOpen(false); }}
+                className="w-full rounded-lg px-3 py-2 text-left text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+              >
+                Gerer les acces
+              </button>
+            )}
             <button
               onClick={() => { signOut(); setMenuOpen(false); }}
               className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
@@ -87,6 +98,13 @@ export default function UserMenu({ onLoadCandidature, onLoadContactSearch }: {
           onClose={() => setShowHistory(false)}
           onSelect={(data) => { onLoadCandidature?.(data); setShowHistory(false); }}
           onSelectContactSearch={(data) => { onLoadContactSearch?.(data); setShowHistory(false); }}
+        />
+      )}
+
+      {showAdmin && user?.email && (
+        <AdminPanel
+          adminEmail={user.email}
+          onClose={() => setShowAdmin(false)}
         />
       )}
     </div>

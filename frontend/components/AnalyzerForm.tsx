@@ -2546,18 +2546,48 @@ function RealInterviewMode({
 
 // ---------- Mode Entretien Audio ----------
 
-type AudioPhase = "ready" | "ai-speaking" | "listening" | "finished" | "evaluating" | "results";
+type AudioPhase = "ready" | "warmup" | "ai-speaking" | "listening" | "acknowledging" | "finished" | "evaluating" | "results";
+
+const LANG_LOCALE: Record<string, string> = {
+  fr: "fr-FR", en: "en-US", es: "es-ES", de: "de-DE", pt: "pt-PT",
+};
+
+const WARMUP_PHRASES: Record<string, string> = {
+  fr: "Bonjour ! Es-tu pret a commencer l'entretien ? Quand tu es pret, clique sur le bouton pour demarrer.",
+  en: "Hello! Are you ready to start the interview? When you're ready, click the button to begin.",
+  es: "Hola! Estas listo para comenzar la entrevista? Cuando estes listo, haz clic en el boton para empezar.",
+  de: "Hallo! Bist du bereit fuer das Interview? Wenn du bereit bist, klicke auf den Button um zu starten.",
+  pt: "Ola! Estas pronto para comecar a entrevista? Quando estiveres pronto, clica no botao para comecar.",
+};
+
+const END_PHRASES: Record<string, string> = {
+  fr: "Merci, c'est la fin de l'entretien. Voyons tes resultats.",
+  en: "Thank you, the interview is over. Let's see your results.",
+  es: "Gracias, la entrevista ha terminado. Veamos tus resultados.",
+  de: "Danke, das Interview ist vorbei. Schauen wir uns deine Ergebnisse an.",
+  pt: "Obrigado, a entrevista terminou. Vamos ver os teus resultados.",
+};
+
+const ACK_PHRASES_BY_LANG: Record<string, string[]> = {
+  fr: ["Tres bien, question suivante.", "D'accord, passons a la suite.", "Merci pour ta reponse.", "Bien note, continuons.", "OK, voyons la question suivante."],
+  en: ["Very well, next question.", "Alright, let's move on.", "Thank you for your answer.", "Noted, let's continue.", "OK, next question."],
+  es: ["Muy bien, siguiente pregunta.", "De acuerdo, continuemos.", "Gracias por tu respuesta.", "Anotado, sigamos.", "OK, siguiente pregunta."],
+  de: ["Sehr gut, naechste Frage.", "In Ordnung, weiter gehts.", "Danke fuer deine Antwort.", "Notiert, machen wir weiter.", "OK, naechste Frage."],
+  pt: ["Muito bem, proxima pergunta.", "Certo, vamos continuar.", "Obrigado pela tua resposta.", "Anotado, continuemos.", "OK, proxima pergunta."],
+};
 
 function AudioInterviewMode({
   questions,
   cvText,
   jobContent,
   jobTitle,
+  lang = "fr",
 }: {
   questions: InterviewQuestion[];
   cvText: string;
   jobContent: string;
   jobTitle: string;
+  lang?: string;
 }) {
   const [phase, setPhase] = useState<AudioPhase>("ready");
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -2568,6 +2598,10 @@ function AudioInterviewMode({
   const [evalError, setEvalError] = useState<string | null>(null);
   const [listenSeconds, setListenSeconds] = useState(0);
   const [browserSupported, setBrowserSupported] = useState(true);
+  const [micGranted, setMicGranted] = useState(false);
+  const [micChecked, setMicChecked] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
 
   const recognitionRef = useRef<ReturnType<typeof Object> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -2579,6 +2613,11 @@ function AudioInterviewMode({
   const ttsAbort = useRef<AbortController | null>(null);
   // Ref pour stocker le transcript courant (evite les closures stale)
   const transcriptRef = useRef("");
+  // Ref pour detecter l'activite audio du micro
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
 
   // Sync transcriptRef avec le state
   useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
@@ -2598,10 +2637,95 @@ function AudioInterviewMode({
       recognitionRef.current?.stop?.();
       audioRef.current?.pause();
       if (timerRef.current) clearInterval(timerRef.current);
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      audioContextRef.current?.close();
+      micStreamRef.current?.getTracks().forEach(t => t.stop());
       evalAbort.current?.abort();
       ttsAbort.current?.abort();
     };
   }, []);
+
+  // Demander l'acces au micro
+  const [micError, setMicError] = useState<string | null>(null);
+
+  async function requestMicAccess() {
+    setMicError(null);
+    setMicChecked(false);
+
+    // Verifier que l'API est disponible
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMicError("Ton navigateur ne supporte pas l'acces au micro. Utilise Chrome ou Edge, et assure-toi d'etre en HTTPS ou localhost.");
+      setMicGranted(false);
+      setMicChecked(true);
+      return;
+    }
+
+    try {
+      // Verifier d'abord l'etat de la permission
+      if (navigator.permissions) {
+        try {
+          const permStatus = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          if (permStatus.state === "denied") {
+            setMicError("L'acces au micro est bloque. Clique sur l'icone cadenas dans la barre d'adresse de ton navigateur, autorise le micro, puis clique Reessayer.");
+            setMicGranted(false);
+            setMicChecked(true);
+            return;
+          }
+        } catch { /* permissions.query pas supporte pour 'microphone' sur certains navigateurs */ }
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setMicGranted(true);
+      setMicChecked(true);
+      micStreamRef.current = stream;
+      // Configurer l'analyseur audio pour detecter quand l'utilisateur parle
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      audioContextRef.current = ctx;
+      analyserRef.current = analyser;
+    } catch (err) {
+      setMicGranted(false);
+      setMicChecked(true);
+      if (err instanceof DOMException) {
+        if (err.name === "NotAllowedError") {
+          setMicError("Tu as refuse l'acces au micro. Clique sur l'icone cadenas dans la barre d'adresse, autorise le micro, puis clique Reessayer.");
+        } else if (err.name === "NotFoundError") {
+          setMicError("Aucun micro detecte sur ton appareil. Branche un micro ou un casque avec micro, puis clique Reessayer.");
+        } else {
+          setMicError(`Erreur micro : ${err.message}`);
+        }
+      } else {
+        setMicError("Impossible d'acceder au micro. Verifie les parametres de ton navigateur.");
+      }
+    }
+  }
+
+  // Demander l'acces au micro des le montage
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { requestMicAccess(); }, []);
+
+  // Boucle d'animation pour detecter si l'utilisateur parle (volume micro)
+  function startVoiceDetection() {
+    const analyser = analyserRef.current;
+    if (!analyser) return;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    function tick() {
+      if (!listeningRef.current) { setIsSpeaking(false); return; }
+      analyser!.getByteFrequencyData(data);
+      const avg = data.reduce((s, v) => s + v, 0) / data.length;
+      setIsSpeaking(avg > 15);
+      animFrameRef.current = requestAnimationFrame(tick);
+    }
+    tick();
+  }
+
+  function stopVoiceDetection() {
+    if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null; }
+    setIsSpeaking(false);
+  }
 
   // --- TTS : lire un texte a voix haute ---
   async function speakText(text: string): Promise<void> {
@@ -2617,7 +2741,7 @@ function AudioInterviewMode({
     });
   }
 
-  // --- Demarrer l'entretien ---
+  // --- Demarrer l'entretien (phase warmup : "es-tu pret ?") ---
   async function startInterview() {
     stoppedRef.current = false;
     setCurrentIdx(0);
@@ -2625,22 +2749,53 @@ function AudioInterviewMode({
     setTimeTaken([]);
     setBatchResult(null);
     setEvalError(null);
+    setPhase("warmup");
+
+    // Resume audio context si suspendu (politique navigateur)
+    if (audioContextRef.current?.state === "suspended") {
+      await audioContextRef.current.resume();
+    }
+
+    try {
+      await speakText(WARMUP_PHRASES[lang] ?? WARMUP_PHRASES.fr);
+    } catch {
+      // Fallback silencieux
+    }
+  }
+
+  // --- Lancer les questions apres confirmation ---
+  async function confirmReady() {
+    if (stoppedRef.current) return;
     await askQuestion(0);
   }
 
   // --- Poser une question via TTS ---
   async function askQuestion(idx: number) {
     if (stoppedRef.current) return;
-    setPhase("ai-speaking");
     setTranscript("");
-    try {
-      await speakText(questions[idx].question);
-      if (stoppedRef.current) return;
+    transcriptRef.current = "";
+
+    if (ttsEnabled) {
+      setPhase("ai-speaking");
+      try {
+        await speakText(questions[idx].question);
+        if (stoppedRef.current) return;
+        startListening();
+      } catch {
+        // Fallback : si TTS echoue, passer directement a l'ecoute
+        if (!stoppedRef.current) startListening();
+      }
+    } else {
+      // Mode sans voix : passer directement a l'ecoute
       startListening();
-    } catch {
-      // Fallback : si TTS echoue, passer directement a l'ecoute
-      if (!stoppedRef.current) startListening();
     }
+  }
+
+  // --- Couper la voix de l'IA et repondre immediatement ---
+  function skipToAnswer() {
+    audioRef.current?.pause();
+    ttsAbort.current?.abort();
+    if (!stoppedRef.current) startListening();
   }
 
   // --- Commencer l'ecoute micro ---
@@ -2648,6 +2803,7 @@ function AudioInterviewMode({
     setPhase("listening");
     setListenSeconds(0);
     setTranscript("");
+    transcriptRef.current = "";
     startTimeRef.current = Date.now();
     listeningRef.current = true;
 
@@ -2656,14 +2812,18 @@ function AudioInterviewMode({
       setListenSeconds(Math.round((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
 
+    // Demarrer la detection de voix (icone micro animee)
+    startVoiceDetection();
+
     // Web Speech API
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
     const recognition = new SR();
-    recognition.lang = "fr-FR";
+    recognition.lang = LANG_LOCALE[lang] ?? "fr-FR";
     recognition.continuous = true;
     recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (e: any) => {
@@ -2672,6 +2832,7 @@ function AudioInterviewMode({
         text += e.results[i][0].transcript;
       }
       setTranscript(text);
+      transcriptRef.current = text;
     };
 
     // Redemarrer si l'API coupe apres un silence
@@ -2683,7 +2844,9 @@ function AudioInterviewMode({
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onerror = (e: any) => {
-      if (e.error !== "aborted" && e.error !== "no-speech") {
+      if (e.error === "not-allowed") {
+        console.error("Micro non autorise — verifier les permissions du navigateur");
+      } else if (e.error !== "aborted" && e.error !== "no-speech") {
         console.warn("SpeechRecognition error:", e.error);
       }
     };
@@ -2698,9 +2861,10 @@ function AudioInterviewMode({
     recognitionRef.current?.stop?.();
     recognitionRef.current = null;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    stopVoiceDetection();
   }
 
-  // --- Question suivante ---
+  // --- Question suivante (enchainement immediat) ---
   async function nextQuestion() {
     stopListening();
     const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000);
@@ -2709,6 +2873,7 @@ function AudioInterviewMode({
     setAnswers(prev => [...prev, currentTranscript]);
     setTimeTaken(prev => [...prev, elapsed]);
     setTranscript("");
+    transcriptRef.current = "";
 
     const nextIdx = currentIdx + 1;
     if (nextIdx >= questions.length) {
@@ -2716,7 +2881,7 @@ function AudioInterviewMode({
       setPhase("finished");
     } else {
       setCurrentIdx(nextIdx);
-      await askQuestion(nextIdx);
+      if (!stoppedRef.current) await askQuestion(nextIdx);
     }
   }
 
@@ -2789,19 +2954,119 @@ function AudioInterviewMode({
         <div>
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Entretien audio</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-md mx-auto">
-            L&apos;IA va te poser {questions.length} questions a voix haute. Reponds oralement — ta reponse sera transcrite automatiquement.
+            L&apos;IA va te poser {questions.length} questions a voix haute. Reponds oralement — ta voix sera analysee en temps reel.
           </p>
         </div>
         <div className="space-y-1 text-xs text-gray-400 dark:text-gray-500">
-          <p>Assure-toi que ton micro est active</p>
+          {micGranted ? (
+            <p className="text-green-500 dark:text-green-400 font-medium">Micro detecte et autorise</p>
+          ) : micChecked ? (
+            <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-4 text-left space-y-2 max-w-md mx-auto">
+              <p className="text-red-700 dark:text-red-300 font-semibold text-sm">Micro non detecte ou acces refuse</p>
+              <p className="text-red-600 dark:text-red-400 text-xs">
+                {micError ?? "Verifie que ton micro est branche et autorise l'acces dans les parametres de ton navigateur."}
+              </p>
+              <button
+                onClick={requestMicAccess}
+                className="rounded-lg bg-red-100 dark:bg-red-900/50 px-4 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-800/60 transition-colors"
+              >
+                Reessayer
+              </button>
+            </div>
+          ) : (
+            <p className="text-orange-500 dark:text-orange-400 font-medium">Autorise l&apos;acces au micro quand le navigateur le demande</p>
+          )}
           <p>Chrome ou Edge recommande</p>
         </div>
+        {/* Toggle lecture vocale */}
+        <label className="flex items-center justify-center gap-3 cursor-pointer">
+          <span className="text-sm text-gray-600 dark:text-gray-400">L&apos;IA lit les questions a voix haute</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={ttsEnabled}
+            onClick={() => setTtsEnabled(v => !v)}
+            className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ${
+              ttsEnabled ? "bg-indigo-600" : "bg-gray-300 dark:bg-gray-600"
+            }`}
+          >
+            <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform duration-200 ${
+              ttsEnabled ? "translate-x-5" : "translate-x-0"
+            }`} />
+          </button>
+        </label>
         <button
           onClick={startInterview}
-          className="rounded-xl bg-indigo-600 px-8 py-4 text-lg font-semibold text-white hover:bg-indigo-700 transition-all"
+          disabled={!micGranted}
+          className={`rounded-xl px-8 py-4 text-lg font-semibold text-white transition-all ${
+            micGranted
+              ? "bg-indigo-600 hover:bg-indigo-700"
+              : "bg-gray-400 dark:bg-gray-600 cursor-not-allowed"
+          }`}
         >
           Commencer l&apos;entretien
         </button>
+      </div>
+    );
+  }
+
+  // --- Phase : Warmup (IA demande si pret) ---
+  if (phase === "warmup") {
+    return (
+      <div className="text-center space-y-6 py-8">
+        <div className="mx-auto relative h-24 w-24">
+          <div className="absolute inset-0 rounded-full bg-indigo-400/30 animate-ping" />
+          <div className="relative h-24 w-24 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+            <svg className="h-10 w-10 text-indigo-600 dark:text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M5.889 16H2a1 1 0 01-1-1V9a1 1 0 011-1h3.889l5.294-4.332a.5.5 0 01.817.387v15.89a.5.5 0 01-.817.387L5.89 16z" />
+              <path d="M16 9a4 4 0 010 6M19 5a8.5 8.5 0 010 14" strokeWidth={2} stroke="currentColor" fill="none" strokeLinecap="round" />
+            </svg>
+          </div>
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Preparation en cours...</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">L&apos;intervieweur va te parler, ecoute bien.</p>
+        </div>
+        <button
+          onClick={confirmReady}
+          className="rounded-xl bg-green-600 px-8 py-4 text-lg font-semibold text-white hover:bg-green-700 transition-all"
+        >
+          Je suis pret, on commence !
+        </button>
+        <button onClick={() => { stoppedRef.current = true; setPhase("ready"); }}
+          className="block mx-auto text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+          Annuler
+        </button>
+      </div>
+    );
+  }
+
+  // --- Phase : Acknowledging (acquiescement IA entre questions) ---
+  if (phase === "acknowledging") {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Question {Math.min(currentIdx + 1, questions.length)} / {questions.length}
+          </p>
+          <button onClick={stopInterview}
+            className="rounded-lg bg-red-100 dark:bg-red-900/40 px-4 py-2 text-sm font-semibold text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors">
+            Arreter l&apos;entretien
+          </button>
+        </div>
+        <div className="h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+          <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${(currentIdx / questions.length) * 100}%` }} />
+        </div>
+        <div className="text-center space-y-4 py-6">
+          <div className="mx-auto h-16 w-16 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
+            <svg className="h-8 w-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400 animate-pulse">
+            L&apos;intervieweur prend note...
+          </p>
+        </div>
       </div>
     );
   }
@@ -2849,6 +3114,13 @@ function AudioInterviewMode({
           </div>
           <p className="text-gray-800 dark:text-gray-200">{questions[currentIdx].question}</p>
         </div>
+        {/* Bouton repondre tout de suite */}
+        <button
+          onClick={skipToAnswer}
+          className="w-full rounded-xl bg-green-600 px-6 py-3.5 font-semibold text-white hover:bg-green-700 transition-all"
+        >
+          Je connais la reponse, repondre maintenant
+        </button>
       </div>
     );
   }
@@ -2887,30 +3159,49 @@ function AudioInterviewMode({
           </div>
           <p className="text-sm text-gray-700 dark:text-gray-300">{questions[currentIdx].question}</p>
         </div>
-        {/* Micro animation */}
+        {/* Micro animation — s'illumine quand l'utilisateur parle */}
         <div className="text-center">
-          <div className="mx-auto h-16 w-16 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center animate-pulse">
-            <svg className="h-8 w-8 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className={`mx-auto h-20 w-20 rounded-full flex items-center justify-center transition-all duration-200 ${
+            isSpeaking
+              ? "bg-red-500 dark:bg-red-600 shadow-lg shadow-red-500/40 scale-110"
+              : "bg-red-100 dark:bg-red-900/40 scale-100"
+          }`}>
+            <svg className={`h-10 w-10 transition-colors duration-200 ${
+              isSpeaking ? "text-white" : "text-red-600 dark:text-red-400"
+            }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
             </svg>
           </div>
-          <p className="text-xs text-red-500 dark:text-red-400 mt-2 font-medium">Ecoute en cours...</p>
-        </div>
-        {/* Transcription en direct */}
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 min-h-[100px]">
-          <p className="text-xs text-gray-400 mb-2">Transcription en direct</p>
-          <p className="text-gray-800 dark:text-gray-200 leading-relaxed">
-            {transcript || <span className="text-gray-400 italic">En attente de ta reponse...</span>}
+          <p className={`text-xs mt-2 font-medium transition-colors duration-200 ${
+            isSpeaking
+              ? "text-red-600 dark:text-red-400"
+              : "text-gray-400 dark:text-gray-500"
+          }`}>
+            {isSpeaking ? "Parle, je t'ecoute..." : "En attente de ta voix..."}
           </p>
+          {/* Indicateur discret que la reconnaissance fonctionne */}
+          {transcript.trim() && (
+            <p className="text-xs text-green-500 dark:text-green-400 mt-1 font-medium">
+              Reponse captee ({transcript.trim().split(/\s+/).length} mots)
+            </p>
+          )}
         </div>
         {/* Bouton suivant */}
         <button
           onClick={nextQuestion}
-          disabled={!transcript.trim()}
+          disabled={!transcript.trim() && listenSeconds < 10}
           className="w-full rounded-xl bg-indigo-600 px-6 py-3.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
           {currentIdx + 1 >= questions.length ? "Terminer l'entretien" : "Question suivante"}
         </button>
+        {listenSeconds >= 10 && !transcript.trim() && (
+          <button
+            onClick={nextQuestion}
+            className="w-full text-center text-sm text-gray-400 dark:text-gray-500 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors cursor-pointer mt-1"
+          >
+            Passer cette question
+          </button>
+        )}
       </div>
     );
   }
@@ -3031,6 +3322,7 @@ function InterviewPrepForm({
   loadedInterviewTopicDetails,
   loadedInterviewQuestions,
   resultKey,
+  lang,
 }: {
   currentCvText?: string;
   currentJobContent?: string;
@@ -3041,6 +3333,7 @@ function InterviewPrepForm({
   loadedInterviewTopicDetails?: Record<string, TopicDetailResponse> | null;
   loadedInterviewQuestions?: InterviewQuestion[] | null;
   resultKey?: number;
+  lang?: string;
 }) {
   const { user } = useAuth();
   const hasCurrent = !!(currentCvText && currentJobContent);
@@ -3392,10 +3685,10 @@ function InterviewPrepForm({
             >
               <div className="flex items-center gap-3 mb-2">
                 <span className="text-2xl">&#128214;</span>
-                <p className="font-bold text-gray-900 dark:text-gray-100">Preparer l&apos;entretien</p>
+                <p className="font-bold text-gray-900 dark:text-gray-100">Approfondir les notions</p>
               </div>
               <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                Evaluation de ton niveau, plan de revision avec ressources et concepts cles a maitriser pour le poste.
+                Evaluation de ton niveau, plan de revision structure avec ressources, concepts cles et points a maitriser pour le poste.
               </p>
             </button>
             <button
@@ -3405,10 +3698,10 @@ function InterviewPrepForm({
             >
               <div className="flex items-center gap-3 mb-2">
                 <span className="text-2xl">&#127919;</span>
-                <p className="font-bold text-gray-900 dark:text-gray-100">S&apos;entrainer</p>
+                <p className="font-bold text-gray-900 dark:text-gray-100">Preparer un entretien en direct</p>
               </div>
               <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                Passe directement aux questions d&apos;entretien : entrainement, simulation chronometree ou entretien audio.
+                Entraine-toi avec des questions d&apos;entretien : mode ecrit, simulation chronometree ou entretien audio face a l&apos;IA.
               </p>
             </button>
           </div>
@@ -3745,6 +4038,7 @@ function InterviewPrepForm({
                   cvText={cvText}
                   jobContent={jobContent.trim()}
                   jobTitle={overview?.job_title ?? ""}
+                  lang={lang}
                 />
               )}
 
@@ -3803,6 +4097,7 @@ export default function AnalyzerForm({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MatchAnalysisResponse | null>(null);
   const [showContacts, setShowContacts] = useState(false);
+  const [appLang, setAppLang] = useState<LangCode>("fr");
   const [contactsLang, setContactsLang] = useState<LangCode>("fr");
   const [contactsUploading, setContactsUploading] = useState(false);
   const [candidatureId, setCandidatureId] = useState<string | null>(null);
@@ -4033,41 +4328,8 @@ export default function AnalyzerForm({
     }
   }
 
-  // Gate d'authentification
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 space-y-6">
-        <div className="text-center space-y-2">
-          <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-            Connecte-toi pour commencer
-          </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Un compte gratuit suffit pour analyser ton CV et preparer tes candidatures.
-          </p>
-        </div>
-        <button
-          onClick={signInWithGoogle}
-          className="flex items-center gap-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-6 py-3 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm transition-all hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md"
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-          </svg>
-          Continuer avec Google
-        </button>
-      </div>
-    );
-  }
+  // Note : la gate d'authentification + contrôle d'accès est gérée par AccessGate dans page.tsx
+  // AnalyzerForm est toujours rendu avec un user connecté et approuvé.
 
   return (
     <div className="space-y-8">
@@ -4124,6 +4386,7 @@ export default function AnalyzerForm({
           loadedInterviewTopicDetails={loadedInterviewTopicDetails}
           loadedInterviewQuestions={loadedInterviewQuestions}
           resultKey={resultKey}
+          lang={appLang}
         />
       </div>
 

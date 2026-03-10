@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import AnalyzerForm from "@/components/AnalyzerForm";
 import UserMenu from "@/components/UserMenu";
+import AccessGate from "@/components/AccessGate";
+import type { AccessStatus } from "@/lib/api";
 import type { LoadedCandidature, LoadedContactSearch } from "@/components/HistoryPanel";
 
 type DeviceMode = "desktop" | "mobile";
@@ -63,6 +65,7 @@ export default function Home() {
   const [device, setDevice] = useState<DeviceMode>("desktop");
   const [loadedCandidature, setLoadedCandidature] = useState<LoadedCandidature | null>(null);
   const [loadedContactSearch, setLoadedContactSearch] = useState<LoadedContactSearch | null>(null);
+  const [accessInfo, setAccessInfo] = useState<AccessStatus | null>(null);
 
   const handleLoadCandidature = useCallback((data: LoadedCandidature) => {
     setLoadedCandidature(data);
@@ -83,7 +86,11 @@ export default function Home() {
       <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
         <DeviceToggle mode={device} onChange={setDevice} />
         <ThemeToggle />
-        <UserMenu onLoadCandidature={handleLoadCandidature} onLoadContactSearch={handleLoadContactSearch} />
+        <UserMenu
+          onLoadCandidature={handleLoadCandidature}
+          onLoadContactSearch={handleLoadContactSearch}
+          isAdmin={accessInfo?.role === "admin"}
+        />
       </div>
 
       <div className={containerClass}>
@@ -99,15 +106,18 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Carte principale */}
-        <div className="rounded-2xl bg-white dark:bg-gray-800 p-4 sm:p-8 shadow-sm ring-1 ring-gray-100 dark:ring-gray-700">
-          <AnalyzerForm
-            loadedCandidature={loadedCandidature}
-            onCandidatureLoaded={() => setLoadedCandidature(null)}
-            loadedContactSearch={loadedContactSearch}
-            onContactSearchLoaded={() => setLoadedContactSearch(null)}
-          />
-        </div>
+        {/* Gate d'accès — vérifie que l'utilisateur est approuvé */}
+        <AccessGate onAccessInfo={setAccessInfo}>
+          {/* Carte principale */}
+          <div className="rounded-2xl bg-white dark:bg-gray-800 p-4 sm:p-8 shadow-sm ring-1 ring-gray-100 dark:ring-gray-700">
+            <AnalyzerForm
+              loadedCandidature={loadedCandidature}
+              onCandidatureLoaded={() => setLoadedCandidature(null)}
+              loadedContactSearch={loadedContactSearch}
+              onContactSearchLoaded={() => setLoadedContactSearch(null)}
+            />
+          </div>
+        </AccessGate>
 
         {/* Footer */}
         <p className="mt-8 text-center text-xs text-gray-400 dark:text-gray-500">

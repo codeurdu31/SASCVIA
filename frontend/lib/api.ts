@@ -607,6 +607,72 @@ export async function cvPreviewToTemplateHTML(content: string, template: string,
   return res.text();
 }
 
+// ---------- Access Control ----------
+
+export interface AccessStatus {
+  status: "approved" | "pending" | "denied" | "unknown";
+  role: "admin" | "user";
+  quota_limit: number;
+}
+
+export interface PendingUser {
+  email: string;
+  name: string;
+  avatar_url: string;
+  status: string;
+  role: string;
+  quota_limit: number;
+  requested_at: string;
+}
+
+export async function getAccessStatus(userEmail: string): Promise<AccessStatus> {
+  const res = await fetch(`${API_BASE}/access/status`, {
+    headers: { "X-User-Email": userEmail },
+  });
+  return res.json() as Promise<AccessStatus>;
+}
+
+export async function requestAccess(
+  userEmail: string,
+  name: string,
+  avatarUrl: string = ""
+): Promise<AccessStatus> {
+  const res = await fetch(`${API_BASE}/access/request`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Email": userEmail,
+    },
+    body: JSON.stringify({ name, avatar_url: avatarUrl }),
+  });
+  return res.json() as Promise<AccessStatus>;
+}
+
+export async function getPendingUsers(adminEmail: string): Promise<PendingUser[]> {
+  const res = await fetch(`${API_BASE}/access/pending`, {
+    headers: { "X-User-Email": adminEmail },
+  });
+  if (!res.ok) throw new Error("Accès refusé");
+  return res.json() as Promise<PendingUser[]>;
+}
+
+export async function decideAccess(
+  adminEmail: string,
+  targetEmail: string,
+  decision: "approved" | "denied",
+  quotaLimit: number = 20
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/access/decide`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Email": adminEmail,
+    },
+    body: JSON.stringify({ email: targetEmail, decision, quota_limit: quotaLimit }),
+  });
+  if (!res.ok) throw new Error("Erreur lors de la décision");
+}
+
 // ---------- Quota ----------
 
 export interface QuotaInfo {
