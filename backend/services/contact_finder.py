@@ -33,6 +33,25 @@ _EXCLUDE_TITLES = re.compile(
 )
 
 
+def _generate_email_from_name(name: str, domain: str) -> str:
+    """Genere un email estime a partir du nom et du domaine.
+    Ex: 'Jean-Pierre Dupont' + 'vega-is.com' -> 'jean-pierre.dupont@vega-is.com'"""
+    if not name or not domain:
+        return ""
+    import unicodedata
+    # Normaliser les accents (é→e, ç→c, etc.)
+    normalized = unicodedata.normalize("NFD", name.lower())
+    normalized = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+    # Séparer prénom/nom
+    parts = normalized.strip().split()
+    if len(parts) < 2:
+        return ""
+    prenom = parts[0]
+    nom = parts[-1]
+    domain = domain.lstrip("@")
+    return f"{prenom}.{nom}@{domain}"
+
+
 def _linkedin_search_url(name: str, company: str) -> str:
     """Construit un lien de recherche LinkedIn pre-rempli pour verifier le contact."""
     query = quote(f"{name} {company}")
@@ -132,12 +151,15 @@ Fais des recherches web avec ces formats EXACTS :
 - "[departement]" "[entreprise]" manager OR lead site:linkedin.com/in
 Exemples concrets : "Early Detection" "Credit Agricole CIB" site:linkedin.com/in
 
-ETAPE 2 — Site officiel et presse :
-- "[entreprise]" "[equipe]" site:linkedin.com
+ETAPE 2 — Autres sources (RocketReach, TheOrg, site officiel) :
+- "[entreprise]" "[equipe]" site:rocketreach.co OR site:theorg.com
 - "[entreprise]" "[departement]" manager OR responsable
+- "[entreprise]" equipe OR team "[nom equipe]"
 
 ETAPE 3 — Elargissement si necessaire :
 - Si pas assez de resultats, elargis au departement puis a la direction.
+- Essaie aussi : "[entreprise]" gerant OR analyst OR manager site:linkedin.com/in
+- Essaie des variantes du nom de l'entreprise (acronymes, noms courts).
 
 REGLES ABSOLUES DE FILTRAGE :
 1. VERIFIE le titre ACTUEL sur LinkedIn — le poste doit etre le poste ACTUEL, pas un ancien poste.
@@ -153,7 +175,19 @@ Pour chaque personne trouvee, donne :
 - Cercle : 1 (equipe directe), 2 (departement), 3 (direction)
 - Justification courte
 
-Trouve AU MINIMUM 4-5 personnes pour qu'on puisse en selectionner les 3 meilleures."""
+Trouve AU MINIMUM 4-5 personnes pour qu'on puisse en selectionner les 3 meilleures.
+
+IMPORTANT — REGLE DE SUCCES :
+- Tu DOIS trouver au moins 3 personnes REELLES. Ne jamais abandonner.
+- Si LinkedIn ne donne rien, cherche sur RocketReach, TheOrg, Viadeo, le site officiel.
+- Si l'equipe exacte ne donne rien, elargis IMMEDIATEMENT au departement.
+- Si le departement ne donne rien, elargis a l'entreprise entiere + filtre par metier.
+- Pour chaque personne, donne son NOM COMPLET et TITRE ACTUEL — meme si tu n'as pas de lien LinkedIn.
+
+REGLE ANTI-HALLUCINATION ABSOLUE :
+- Ne mentionne QUE des personnes que tu as REELLEMENT trouvees dans les resultats de recherche web.
+- N'INVENTE JAMAIS un nom, un titre ou un profil. Chaque contact doit provenir d'un resultat de recherche concret.
+- Si tu ne trouves personne malgre toutes les tentatives, dis-le clairement. Ne remplis JAMAIS avec des personnes inventees."""
 
 
 async def _phase1_websearch(
@@ -228,7 +262,7 @@ async def _phase1_websearch(
         tools=[{
             "type": "web_search_20250305",
             "name": "web_search",
-            "max_uses": 10,
+            "max_uses": 15,
         }],
         extra_headers={"anthropic-beta": "web-search-2025-03-05"},
     )
@@ -247,7 +281,8 @@ async def _phase1_websearch(
 
 _PHASE2_SYSTEM = """Tu recois le resultat d'une recherche de contacts pour une candidature.
 Transforme ce texte en JSON structure. Extrais UNIQUEMENT les informations presentes dans le texte.
-N'invente RIEN. Si une info n'est pas dans le texte, mets null.
+N'invente RIEN. N'AJOUTE AUCUN contact qui n'est pas explicitement mentionne dans le texte source.
+Si une info n'est pas dans le texte, mets null. Si le texte ne contient aucun vrai contact, retourne une liste vide.
 
 CERCLES DE RECHERCHE (search_circle) — TRES IMPORTANT :
 Chaque contact doit etre tague avec son cercle de proximite par rapport au poste :
@@ -264,6 +299,13 @@ FILTRAGE STRICT :
 - EXCLUS toute personne dont le titre contient : Head of, VP, Director, Managing Director, C-level, Partner.
 - EXCLUS toute personne qui ne travaille PLUS dans l'entreprise (ancien poste, "ex-", "former").
 - GARDE : analyst, senior analyst, officer, associate, manager, team lead, charge de mission.
+
+EMAILS — OBLIGATOIRE :
+- Pour CHAQUE contact, tu DOIS generer un email estime au format prenom.nom@domaine.com
+- Si le domaine email est mentionne dans le contexte, utilise-le.
+- Si le domaine n'est pas connu, DEDUIS-LE du nom de l'entreprise (ex: VEGA Investment Solutions → vega-is.com ou vegainvestments.com).
+- N'EXCLUS JAMAIS un contact juste parce que tu ne connais pas son email — genere une estimation.
+- Le champ "email" ne doit JAMAIS etre vide ou null.
 
 Output JSON uniquement, sans markdown:
 {"company_name":"...","team_name":"...","position":"...","location":"...",
@@ -506,14 +548,8 @@ async def find_relevant_contacts(
     except Exception as exc:
         print(f"[contacts] web_search echoue ({type(exc).__name__}: {exc})")
 
-    # 2. Fallback training data
-    if not data:
-        try:
-            data = await _try_training(client, job_content, job_title, company, context)
-            if data:
-                print("[contacts] Contacts trouves via training data")
-        except Exception as exc:
-            print(f"[contacts] Fallback training data echoue : {exc}")
+    # 2. Pas de fallback training data — on ne veut JAMAIS de contacts inventes.
+    #    Si web_search n'a rien trouve, on retourne une liste vide.
 
     if not data:
         return FindContactsResponse(
@@ -525,7 +561,7 @@ async def find_relevant_contacts(
         )
 
     # Construire ContactEmailFormat
-    ef_data = data.get("email_format", {})
+    ef_data = data.get("email_format") or {}
     email_format: ContactEmailFormat | None = None
     if ef_data and ef_data.get("pattern"):
         email_format = ContactEmailFormat(
@@ -534,25 +570,51 @@ async def find_relevant_contacts(
             examples=ef_data.get("examples", []),
         )
 
+    # Determiner le domaine email pour generer des emails estimes si necessaire
+    ef_data_raw = data.get("email_format") or {}
+    fallback_domain = ""
+    if ef_data_raw.get("domain"):
+        fallback_domain = ef_data_raw["domain"].lstrip("@")
+    elif context.get("domain_hint"):
+        fallback_domain = context["domain_hint"]
+
     # Construire TOUS les ContactProfile (pas de limite ici, sélection ensuite)
     all_contacts: list[ContactProfile] = []
     excluded_count = 0
     for c in data.get("contacts", []):
-        if not c.get("name") or not c.get("email"):
+        name = c.get("name", "").strip()
+        if not name:
             continue
         # Filtrage code : exclure stagiaires, alternants, grands patrons
         title = c.get("title", "")
         if _is_excluded_title(title):
-            print(f"[contacts] EXCLU par filtrage code : {c['name']} ({title})")
+            print(f"[contacts] EXCLU par filtrage code : {name} ({title})")
             excluded_count += 1
             continue
-        name = c["name"]
+        # Email : utiliser celui fourni, sinon generer un estime
+        email = (c.get("email") or "").strip()
+        is_estimated_email = False
+        if not email and fallback_domain:
+            email = _generate_email_from_name(name, fallback_domain)
+            is_estimated_email = True
+            print(f"[contacts] Email estime genere pour {name}: {email}")
+        elif not email:
+            # Derniere tentative : deduire le domaine du nom d'entreprise
+            company_slug = re.sub(r"[^a-z0-9]+", "", company.lower())
+            if company_slug:
+                guessed_domain = f"{company_slug}.com"
+                email = _generate_email_from_name(name, guessed_domain)
+                is_estimated_email = True
+                print(f"[contacts] Email estime (domaine deduit) pour {name}: {email}")
+        if not email:
+            print(f"[contacts] Contact {name} ignore — impossible de generer un email")
+            continue
         linkedin_url = c.get("linkedin_url") or None
         all_contacts.append(ContactProfile(
             rank=int(c.get("rank", len(all_contacts) + 1)),
             name=name,
             title=title,
-            email=c.get("email", ""),
+            email=email,
             linkedin_url=linkedin_url,
             linkedin_search_url=_linkedin_search_url(name, company),
             reasoning=c.get("reasoning", ""),
@@ -560,7 +622,7 @@ async def find_relevant_contacts(
             seniority=c.get("seniority", "mid"),
             team_match=float(c.get("team_match", 0.5)),
             search_circle=int(c.get("search_circle", 2)),
-            is_estimated=not bool(linkedin_url),
+            is_estimated=is_estimated_email or not bool(linkedin_url),
             source="web_search" if linkedin_url else "claude",
         ))
 
