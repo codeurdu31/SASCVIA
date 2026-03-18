@@ -262,7 +262,7 @@ async def _phase1_websearch(
         tools=[{
             "type": "web_search_20250305",
             "name": "web_search",
-            "max_uses": 5,
+            "max_uses": 8,
         }],
         extra_headers={"anthropic-beta": "web-search-2025-03-05"},
     )
