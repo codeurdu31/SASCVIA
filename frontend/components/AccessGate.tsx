@@ -81,17 +81,14 @@ export default function AccessGate({ children, onAccessInfo }: AccessGateProps) 
     );
   }
 
-  // Vérification du statut en cours
-  if (checking || !accessStatus) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-      </div>
-    );
-  }
-
   const displayName = user.user_metadata?.full_name || user.email || "";
   const avatarUrl = user.user_metadata?.avatar_url || "";
+
+  // Vérification en cours → affiche l'app directement (optimistic)
+  // On bloquera seulement si le statut revient "denied" ou "unknown"
+  if (checking || !accessStatus) {
+    return <>{children}</>;
+  }
 
   // Accès approuvé → affiche l'app
   if (accessStatus.status === "approved") {
