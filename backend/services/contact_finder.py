@@ -251,8 +251,8 @@ async def _phase1_websearch(
     print(f"[contacts] Phase 1 — web_search pour '{comp}' / equipe='{team}' / dept='{department}' ...")
 
     r = await client.messages.create(
-        model=_MODEL_OPUS,
-        max_tokens=5000,
+        model=_MODEL_SONNET,
+        max_tokens=4000,
         system=[{
             "type": "text",
             "text": _PHASE1_SYSTEM,
@@ -262,7 +262,7 @@ async def _phase1_websearch(
         tools=[{
             "type": "web_search_20250305",
             "name": "web_search",
-            "max_uses": 15,
+            "max_uses": 5,
         }],
         extra_headers={"anthropic-beta": "web-search-2025-03-05"},
     )
